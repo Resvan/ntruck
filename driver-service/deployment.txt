@@ -1,0 +1,127 @@
+# Add to your existing docker-compose.yml
+driver-service:
+  build: ./driver-service
+  ports:
+    - "3002:3000"
+  environment:
+    - NODE_ENV=production
+    - MONGODB_URI=${MONGODB_URI}
+    - JWT_SECRET=${JWT_SECRET}
+    - KAFKA_BROKERS=kafka:29092
+    - SERVICE_NAME=driver-service
+  depends_on:
+    - kafka
+    - user-service
+
+# kubernetes/driver-service-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driver-service
+  namespace: ntruck
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: driver-service
+  template:
+    metadata:
+      labels:
+        app: driver-service
+    spec:
+      containers:
+      - name: driver-service
+        image: driver-service:latest
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: ntruck-config
+        - secretRef:
+            name: ntruck-secrets
+        env:
+        - name: SERVICE_NAME
+          value: "driver-service"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: driver-service
+  namespace: ntruck
+spec:
+  selector:
+    app: driver-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+
+# Update the existing ingress.yaml to include driver service routes
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ntruck-ingress
+  namespace: ntruck
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: api.ntruck.com
+    http:
+      paths:
+      - path: /users
+        pathType: Prefix
+        backend:
+          service:
+            name: user-service
+            port:
+              number: 3000
+      - path: /loads
+        pathType: Prefix
+        backend:
+          service:
+            name: load-service
+            port:
+              number: 3000
+      - path: /drivers
+        pathType: Prefix
+        backend:
+          service:
+            name: driver-service
+            port:
+              number: 3000
+
+# Add Kafka topics for driver service
+# kafka-topics.yaml
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: driver-events
+  namespace: ntruck
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    retention.ms: 604800000 # 7 days
+    segment.bytes: 1073741824 # 1GB
