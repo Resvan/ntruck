@@ -1,0 +1,326 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - payment-service
+      - user-service
+      - driver-service
+      - load-service
+
+  # User Service
+  user-service:
+    build: ./user-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/user-db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+
+  # Driver Service
+  driver-service:
+    build: ./driver-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/driver-db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+
+  # Load Service
+  load-service:
+    build: ./load-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/load-db
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - mongodb
+      - kafka
+
+  # Payment Service
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/payment-db
+      - KAFKA_BROKERS=kafka:9092
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+    depends_on:
+      - mongodb
+      - kafka
+
+  # Shared Infrastructure
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    command: ["--replSet", "rs0"]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    ports:
+      - "2181:2181"
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:9.5.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  mongodb_data:
+  prometheus_data:
+  grafana_data:
+
+---
+# kubernetes/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logistics-system
+
+---
+# kubernetes/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: services-config
+  namespace: logistics-system
+data:
+  KAFKA_BROKERS: "kafka-service:9092"
+  NODE_ENV: "production"
+
+---
+# kubernetes/shared-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shared-secrets
+  namespace: logistics-system
+type: Opaque
+data:
+  mongodb-uri: base64encodeduri
+  razorpay-key-id: base64encodedid
+  razorpay-key-secret: base64encodedsecret
+
+---
+# kubernetes/api-gateway.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: logistics-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: api-gateway:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+# kubernetes/services/user-service.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: logistics-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+      - name: user-service
+        image: user-service:latest
+        ports:
+        - containerPort: 3001
+        env:
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: shared-secrets
+              key: mongodb-uri
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: services-config
+              key: KAFKA_BROKERS
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+# kubernetes/services/driver-service.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driver-service
+  namespace: logistics-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: driver-service
+  template:
+    metadata:
+      labels:
+        app: driver-service
+    spec:
+      containers:
+      - name: driver-service
+        image: driver-service:latest
+        ports:
+        - containerPort: 3002
+        env:
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: shared-secrets
+              key: mongodb-uri
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: services-config
+              key: KAFKA_BROKERS
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+# kubernetes/services/load-service.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-service
+  namespace: logistics-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: load-service
+  template:
+    metadata:
+      labels:
+        app: load-service
+    spec:
+      containers:
+      - name: load-service
+        image: load-service:latest
+        ports:
+        - containerPort: 3003
+        env:
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: shared-secrets
+              key: mongodb-uri
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: services-config
+              key: KAFKA_BROKERS
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8080']
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+  - job_name: 'driver-service'
+    static_configs:
+      - targets: ['driver-service:3002']
+  - job_name: 'load-service'
+    static_configs:
+      - targets: ['load-service:3003']
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment-service:3000']
