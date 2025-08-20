@@ -1,0 +1,1016 @@
+# NTruck System Modules and Responsibilities
+
+## Module Architecture Overview
+
+NTruck follows a modular microservices architecture with clear separation of concerns. Each module handles specific business domain responsibilities and communicates through well-defined APIs.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            NTruck Platform Modules                              │
+├─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬───────────┤
+│    User     │    Load     │    Job      │   Payment   │Notification │ Analytics │
+│   Module    │   Module    │  Lifecycle  │   Module    │   Module    │  Module   │
+│             │             │   Module    │             │             │           │
+└─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴───────────┘
+```
+
+## 1. User Module
+
+**Primary Responsibility:** Complete user lifecycle management including registration, authentication, profile management, and verification.
+
+### 1.1 Sub-components
+
+#### Authentication Service
+**Responsibilities:**
+- User registration and login
+- JWT token generation and validation
+- Multi-factor authentication
+- Session management
+- Password reset functionality
+
+```javascript
+// Authentication Service Interface
+class AuthenticationService {
+  async register(userData) {
+    // Mobile OTP verification
+    // User data validation
+    // Password hashing
+    // JWT token generation
+  }
+  
+  async login(credentials) {
+    // Credential validation
+    // Token generation
+    // Session creation
+  }
+  
+  async refreshToken(token) {
+    // Token validation
+    // New token generation
+  }
+}
+```
+
+#### Profile Management Service
+**Responsibilities:**
+- User profile CRUD operations
+- Document management
+- Preference settings
+- Privacy controls
+
+```javascript
+// Profile Data Structure
+const userProfile = {
+  personal: {
+    name: String,
+    mobile: String,
+    email: String,
+    address: Object,
+    languages: Array
+  },
+  professional: {
+    experience: Number,
+    specializations: Array,
+    certifications: Array,
+    ratings: Object
+  },
+  preferences: {
+    routes: Array,
+    loadTypes: Array,
+    paymentMethods: Array,
+    notifications: Object
+  }
+};
+```
+
+#### KYC & Verification Service
+**Responsibilities:**
+- Document verification workflow
+- Background checks
+- Credit scoring
+- Compliance management
+- Third-party verification integrations
+
+**Verification Workflow:**
+```
+Document Upload → AI Validation → Manual Review → Background Check → Approval/Rejection
+```
+
+#### User Roles & Permissions Service
+**Responsibilities:**
+- Role-based access control (RBAC)
+- Permission management
+- Feature access control
+- Admin privilege management
+
+```javascript
+const userRoles = {
+  driver: {
+    permissions: ['view_loads', 'bid_loads', 'track_jobs', 'manage_profile'],
+    restrictions: ['cannot_post_loads', 'cannot_access_admin']
+  },
+  shipper: {
+    permissions: ['post_loads', 'manage_bookings', 'view_tracking', 'make_payments'],
+    restrictions: ['cannot_bid_on_loads']
+  },
+  fleet_owner: {
+    permissions: ['manage_drivers', 'fleet_analytics', 'bulk_operations'],
+    inherits: ['shipper', 'driver']
+  }
+};
+```
+
+### 1.2 Module Interactions
+
+**With Load Module:**
+- Provides user authentication for load operations
+- Shares user preferences for load matching
+- Supplies user ratings for trust scores
+
+**With Payment Module:**
+- Provides KYC status for payment eligibility
+- Shares credit scores for financing decisions
+- Supplies banking details for settlements
+
+**With Notification Module:**
+- Provides user preferences for notifications
+- Supplies contact information
+- Shares language preferences
+
+## 2. Load Module
+
+**Primary Responsibility:** Complete load lifecycle management from posting to delivery, including matching algorithms and booking management.
+
+### 2.1 Sub-components
+
+#### Load Management Service
+**Responsibilities:**
+- Load posting and editing
+- Load validation and enrichment
+- Load search and filtering
+- Load status management
+
+```javascript
+// Load Data Structure
+const loadSchema = {
+  id: UUID,
+  shipper_id: UUID,
+  load_details: {
+    type: String, // 'full_truck', 'part_truck', 'container'
+    weight: Number,
+    dimensions: Object,
+    quantity: Number,
+    description: String,
+    special_requirements: Array
+  },
+  route: {
+    source: {
+      address: String,
+      coordinates: Object,
+      landmark: String,
+      contact_person: Object
+    },
+    destination: {
+      address: String,
+      coordinates: Object,
+      landmark: String,
+      contact_person: Object
+    },
+    preferred_routes: Array,
+    distance: Number,
+    estimated_time: Number
+  },
+  requirements: {
+    truck_type: String,
+    driver_requirements: Array,
+    timeline: Object,
+    rate_expectations: Object
+  },
+  status: 'posted' | 'matched' | 'assigned' | 'completed' | 'cancelled'
+};
+```
+
+#### Load Matching Engine
+**Responsibilities:**
+- Intelligent driver-load matching
+- Real-time matching algorithms
+- Bid management system
+- Recommendation engine
+
+```javascript
+// Matching Algorithm
+class LoadMatchingEngine {
+  calculateMatchScore(load, driver) {
+    const factors = {
+      routeCompatibility: this.calculateRouteMatch(load.route, driver.preferredRoutes),
+      truckSuitability: this.calculateTruckMatch(load.requirements, driver.vehicle),
+      driverRating: driver.rating,
+      historicalPerformance: driver.completionRate,
+      pricingAlignment: this.calculatePriceMatch(load.budget, driver.expectedRate),
+      availability: driver.isAvailable,
+      proximity: this.calculateDistance(load.source, driver.currentLocation)
+    };
+    
+    return (
+      factors.routeCompatibility * 0.25 +
+      factors.truckSuitability * 0.20 +
+      factors.driverRating * 0.15 +
+      factors.historicalPerformance * 0.15 +
+      factors.pricingAlignment * 0.15 +
+      factors.proximity * 0.10
+    );
+  }
+}
+```
+
+#### Search & Discovery Service
+**Responsibilities:**
+- Elasticsearch integration
+- Advanced filtering
+- Geo-spatial search
+- Real-time search suggestions
+
+```javascript
+// Search Query Structure
+const searchQuery = {
+  filters: {
+    location: {
+      source_radius: Number,
+      destination_radius: Number,
+      preferred_routes: Array
+    },
+    load_type: Array,
+    truck_type: Array,
+    weight_range: Object,
+    rate_range: Object,
+    timeline: Object
+  },
+  sorting: {
+    field: 'distance' | 'rate' | 'timeline' | 'rating',
+    order: 'asc' | 'desc'
+  },
+  pagination: {
+    page: Number,
+    limit: Number
+  }
+};
+```
+
+#### Bidding System
+**Responsibilities:**
+- Bid creation and management
+- Auto-bidding functionality
+- Bid evaluation algorithms
+- Winner selection process
+
+### 2.2 Module Interactions
+
+**With User Module:**
+- Validates user permissions for load operations
+- Retrieves user preferences for matching
+- Updates user activity and performance metrics
+
+**With Job Lifecycle Module:**
+- Triggers job creation upon load assignment
+- Provides load details for job execution
+- Receives status updates during job lifecycle
+
+**With Analytics Module:**
+- Sends matching metrics and performance data
+- Provides load posting patterns
+- Shares pricing and demand insights
+
+## 3. Job Lifecycle Module
+
+**Primary Responsibility:** Complete job execution management from booking confirmation to delivery completion, including tracking, status updates, and workflow orchestration.
+
+### 3.1 Sub-components
+
+#### Booking Management Service
+**Responsibilities:**
+- Booking creation and confirmation
+- Contract generation
+- Terms and conditions management
+- Booking modifications and cancellations
+
+```javascript
+// Booking Workflow
+const bookingStates = {
+  'pending_confirmation': {
+    description: 'Waiting for shipper/driver confirmation',
+    allowed_transitions: ['confirmed', 'cancelled'],
+    timeout: '2 hours'
+  },
+  'confirmed': {
+    description: 'Booking confirmed by both parties',
+    allowed_transitions: ['pickup_scheduled', 'cancelled'],
+    required_actions: ['payment_escrow', 'document_preparation']
+  },
+  'pickup_scheduled': {
+    description: 'Pickup time and location confirmed',
+    allowed_transitions: ['in_transit', 'cancelled'],
+    notifications: ['driver_pickup_reminder', 'shipper_pickup_notification']
+  }
+};
+```
+
+#### Job Tracking Service
+**Responsibilities:**
+- Real-time GPS tracking
+- Status update management
+- Milestone tracking
+- Geofencing and alerts
+
+```javascript
+// Tracking Data Structure
+const trackingData = {
+  job_id: UUID,
+  current_location: {
+    latitude: Number,
+    longitude: Number,
+    accuracy: Number,
+    timestamp: Date,
+    address: String
+  },
+  status: 'pickup_pending' | 'in_transit' | 'delivered' | 'delayed',
+  milestones: [
+    {
+      type: 'pickup_completed',
+      location: Object,
+      timestamp: Date,
+      proof: Object // Photos, signatures, documents
+    }
+  ],
+  estimated_delivery: Date,
+  route_optimization: {
+    suggested_route: Array,
+    traffic_conditions: Object,
+    fuel_optimal_route: Array,
+    toll_information: Array
+  }
+};
+```
+
+#### Status Management Service
+**Responsibilities:**
+- Job status transitions
+- Business rule enforcement
+- Status validation
+- Automated status updates
+
+```javascript
+// Status Transition Engine
+class StatusManager {
+  async updateStatus(jobId, newStatus, metadata) {
+    // Validate transition rules
+    const currentJob = await this.getJob(jobId);
+    const isValidTransition = this.validateTransition(
+      currentJob.status, 
+      newStatus
+    );
+    
+    if (!isValidTransition) {
+      throw new Error('Invalid status transition');
+    }
+    
+    // Update job status
+    await this.updateJobStatus(jobId, newStatus, metadata);
+    
+    // Trigger dependent services
+    await this.triggerNotifications(jobId, newStatus);
+    await this.updatePaymentStatus(jobId, newStatus);
+    await this.logStatusChange(jobId, currentJob.status, newStatus);
+  }
+}
+```
+
+#### Proof of Delivery (POD) Service
+**Responsibilities:**
+- Digital document collection
+- Photo and signature capture
+- Delivery confirmation workflow
+- Document storage and retrieval
+
+```javascript
+// POD Data Structure
+const proofOfDelivery = {
+  job_id: UUID,
+  delivery_timestamp: Date,
+  delivery_location: Object,
+  recipient_details: {
+    name: String,
+    designation: String,
+    contact: String,
+    signature: String // Base64 encoded
+  },
+  delivery_photos: Array,
+  condition_notes: String,
+  damages_reported: Boolean,
+  shipper_confirmation: Boolean,
+  documents: {
+    invoice: Object,
+    lr_copy: Object,
+    custom_docs: Array
+  }
+};
+```
+
+### 3.2 Job Lifecycle State Machine
+
+```
+┌─────────────┐    Booking     ┌─────────────┐    Confirmation    ┌─────────────┐
+│    Posted   │ ──────────────→│   Matched   │ ─────────────────→ │  Confirmed  │
+└─────────────┘                └─────────────┘                    └─────────────┘
+                                      │                                    │
+                                      ▼                                    ▼
+┌─────────────┐    Pickup      ┌─────────────┐    In Transit     ┌─────────────┐
+│  Cancelled  │ ←──────────────│ Pickup Pend.│ ─────────────────→ │ In Transit  │
+└─────────────┘                └─────────────┘                    └─────────────┘
+                                                                          │
+                                                                          ▼
+┌─────────────┐    Rating      ┌─────────────┐    Delivery       ┌─────────────┐
+│  Completed  │ ←──────────────│   Payment   │ ←─────────────────│  Delivered  │
+└─────────────┘                └─────────────┘                    └─────────────┘
+```
+
+### 3.3 Module Interactions
+
+**With Load Module:**
+- Receives load assignment triggers
+- Provides job progress updates
+- Updates load completion status
+
+**With Payment Module:**
+- Triggers payment escrow on confirmation
+- Requests payment release on delivery
+- Handles payment disputes
+
+**With Notification Module:**
+- Sends status update notifications
+- Triggers milestone alerts
+- Handles emergency notifications
+
+## 4. Payment Module
+
+**Primary Responsibility:** Complete financial transaction management including payments, escrow, settlements, invoicing, and financial compliance.
+
+### 4.1 Sub-components
+
+#### Payment Processing Service
+**Responsibilities:**
+- Payment gateway integrations
+- Multi-payment method support
+- Transaction processing
+- Payment validation and verification
+
+```javascript
+// Payment Methods Configuration
+const paymentMethods = {
+  upi: {
+    providers: ['razorpay', 'payu'],
+    processing_fee: 0.5,
+    settlement_time: 'instant',
+    limits: { min: 1, max: 100000 }
+  },
+  net_banking: {
+    providers: ['razorpay', 'payu'],
+    processing_fee: 1.0,
+    settlement_time: '24_hours',
+    supported_banks: ['sbi', 'hdfc', 'icici', 'axis']
+  },
+  wallet: {
+    providers: ['paytm', 'mobikwik', 'freecharge'],
+    processing_fee: 0.75,
+    settlement_time: 'instant'
+  }
+};
+```
+
+#### Escrow Management Service
+**Responsibilities:**
+- Escrow account creation
+- Fund holding and release
+- Dispute management
+- Automated release triggers
+
+```javascript
+// Escrow Workflow
+class EscrowService {
+  async createEscrow(jobId, amount, payerId) {
+    // Create escrow account
+    const escrowAccount = await this.createEscrowAccount({
+      job_id: jobId,
+      amount: amount,
+      payer_id: payerId,
+      status: 'created',
+      release_conditions: ['delivery_confirmed', 'pod_submitted']
+    });
+    
+    // Hold funds
+    await this.holdFunds(payerId, amount, escrowAccount.id);
+    
+    // Set auto-release timer
+    await this.scheduleAutoRelease(escrowAccount.id, '7_days');
+    
+    return escrowAccount;
+  }
+  
+  async releaseFunds(escrowId, releaseReason) {
+    const escrow = await this.getEscrow(escrowId);
+    
+    // Validate release conditions
+    if (this.validateReleaseConditions(escrow, releaseReason)) {
+      // Calculate final amount (after commission)
+      const commission = this.calculateCommission(escrow.amount);
+      const driverAmount = escrow.amount - commission;
+      
+      // Release funds
+      await this.transferFunds(escrow.payee_id, driverAmount);
+      await this.transferCommission(commission);
+      
+      // Update escrow status
+      await this.updateEscrowStatus(escrowId, 'released');
+    }
+  }
+}
+```
+
+#### Invoice & Billing Service
+**Responsibilities:**
+- Invoice generation
+- Tax calculations (GST)
+- Billing cycle management
+- Financial reporting
+
+```javascript
+// Invoice Structure
+const invoice = {
+  invoice_number: String,
+  job_id: UUID,
+  shipper_id: UUID,
+  driver_id: UUID,
+  billing_details: {
+    base_amount: Number,
+    platform_commission: Number,
+    gst_amount: Number,
+    total_amount: Number,
+    tax_breakdown: {
+      cgst: Number,
+      sgst: Number,
+      igst: Number
+    }
+  },
+  payment_terms: {
+    due_date: Date,
+    payment_methods: Array,
+    late_fee_policy: Object
+  },
+  compliance: {
+    gst_number: String,
+    hsn_code: String,
+    place_of_supply: String
+  }
+};
+```
+
+#### Credit & Financing Service
+**Responsibilities:**
+- Credit score calculation
+- Loan facilitation
+- Working capital advances
+- Risk assessment
+
+```javascript
+// Credit Scoring Algorithm
+class CreditScoringService {
+  calculateCreditScore(driverId) {
+    const driverData = this.getDriverData(driverId);
+    
+    const factors = {
+      completion_rate: driverData.completionRate * 0.25,
+      payment_history: driverData.paymentHistory * 0.20,
+      customer_ratings: driverData.averageRating * 0.20,
+      document_completeness: driverData.documentScore * 0.15,
+      platform_experience: driverData.experienceMonths * 0.10,
+      vehicle_condition: driverData.vehicleScore * 0.10
+    };
+    
+    const rawScore = Object.values(factors).reduce((a, b) => a + b, 0);
+    return Math.min(Math.max(rawScore * 850, 300), 850); // CIBIL-like scale
+  }
+  
+  async assessLoanEligibility(driverId, loanAmount) {
+    const creditScore = this.calculateCreditScore(driverId);
+    const monthlyEarnings = await this.getAverageMonthlyEarnings(driverId);
+    const existingLoans = await this.getExistingLoans(driverId);
+    
+    return {
+      eligible: creditScore > 650 && monthlyEarnings > loanAmount * 0.3,
+      max_loan_amount: monthlyEarnings * 10,
+      interest_rate: this.calculateInterestRate(creditScore),
+      tenure_options: [6, 12, 18, 24] // months
+    };
+  }
+}
+```
+
+### 4.2 Payment Flow Diagrams
+
+#### Standard Payment Flow
+```
+Booking Confirmed → Escrow Created → Funds Held → Job Completed → POD Verified → Funds Released
+      │                   │              │             │              │              │
+      ▼                   ▼              ▼             ▼              ▼              ▼
+  Commission       Payment Gateway   Shipper A/C   Driver Portal  Auto-release   Driver A/C
+  Calculated         Integration      Debited       Updated        Timer          Credited
+```
+
+#### Dispute Resolution Flow
+```
+Dispute Raised → Investigation → Evidence Review → Decision → Fund Distribution
+      │               │               │              │              │
+      ▼               ▼               ▼              ▼              ▼
+ Hold Funds      Admin Review    Document Verify   Judgment    Resolution
+ Indefinitely    Assignment      Photo Analysis    Final       Completed
+```
+
+### 4.3 Module Interactions
+
+**With Job Lifecycle Module:**
+- Receives payment triggers from job milestones
+- Provides payment status updates
+- Handles payment-related disputes
+
+**With User Module:**
+- Validates user payment eligibility
+- Updates credit scores based on payment behavior
+- Retrieves banking and KYC information
+
+**With Notification Module:**
+- Sends payment confirmations
+- Notifies about failed transactions
+- Alerts for credit limit updates
+
+## 5. Notification Module
+
+**Primary Responsibility:** Multi-channel communication management including push notifications, SMS, email, WhatsApp, and in-app messaging.
+
+### 5.1 Sub-components
+
+#### Notification Engine
+**Responsibilities:**
+- Event-driven notification triggers
+- Template management
+- Channel selection logic
+- Delivery scheduling and queuing
+
+```javascript
+// Notification Event Mapping
+const notificationEvents = {
+  'load_matched': {
+    recipients: ['driver'],
+    channels: ['push', 'sms'],
+    priority: 'high',
+    template: 'load_match_found',
+    delivery_time: 'immediate'
+  },
+  'payment_received': {
+    recipients: ['driver'],
+    channels: ['push', 'sms', 'whatsapp'],
+    priority: 'high',
+    template: 'payment_confirmation',
+    delivery_time: 'immediate'
+  },
+  'delivery_reminder': {
+    recipients: ['shipper', 'driver'],
+    channels: ['push', 'sms'],
+    priority: 'medium',
+    template: 'delivery_reminder',
+    delivery_time: '2_hours_before'
+  }
+};
+```
+
+#### Multi-channel Delivery Service
+**Responsibilities:**
+- SMS gateway integration
+- Email service integration
+- Push notification service
+- WhatsApp Business API integration
+
+```javascript
+// Channel Configuration
+const communicationChannels = {
+  sms: {
+    provider: 'MSG91',
+    rate_limit: '100/minute',
+    fallback: 'Twilio',
+    templates: {
+      transactional: 'DLT_registered',
+      promotional: 'requires_consent'
+    }
+  },
+  push: {
+    provider: 'Firebase_FCM',
+    platforms: ['android', 'ios', 'web'],
+    features: ['rich_media', 'action_buttons', 'deep_linking']
+  },
+  email: {
+    provider: 'SendGrid',
+    features: ['html_templates', 'attachment_support', 'tracking'],
+    categories: ['transactional', 'marketing', 'alerts']
+  },
+  whatsapp: {
+    provider: 'Twilio_WhatsApp_API',
+    message_types: ['template', 'session'],
+    media_support: true
+  }
+};
+```
+
+#### Template Management Service
+**Responsibilities:**
+- Multi-language template storage
+- Dynamic content generation
+- A/B testing for messages
+- Template versioning
+
+```javascript
+// Template Structure
+const messageTemplate = {
+  id: 'load_match_found',
+  versions: {
+    'v1.0': {
+      languages: {
+        'en': {
+          title: 'New Load Match Found!',
+          body: 'A load from {{source}} to {{destination}} matches your preferences. Rate: ₹{{rate}}',
+          action_button: 'View Details'
+        },
+        'hi': {
+          title: 'नया लोड मैच मिला!',
+          body: '{{source}} से {{destination}} का एक लोड आपकी पसंद से मेल खाता है। दर: ₹{{rate}}',
+          action_button: 'विवरण देखें'
+        }
+      },
+      variables: ['source', 'destination', 'rate'],
+      channels: ['push', 'sms'],
+      personalization: true
+    }
+  }
+};
+```
+
+#### Preference Management Service
+**Responsibilities:**
+- User notification preferences
+- Do-not-disturb settings
+- Channel preferences
+- Frequency controls
+
+```javascript
+// User Notification Preferences
+const userPreferences = {
+  user_id: UUID,
+  global_settings: {
+    enabled: true,
+    quiet_hours: { start: '22:00', end: '06:00' },
+    timezone: 'Asia/Kolkata'
+  },
+  channel_preferences: {
+    push: { enabled: true, priority_only: false },
+    sms: { enabled: true, transactional_only: true },
+    email: { enabled: true, digest_mode: true },
+    whatsapp: { enabled: false }
+  },
+  event_preferences: {
+    'load_matches': { frequency: 'immediate', channels: ['push'] },
+    'payment_updates': { frequency: 'immediate', channels: ['push', 'sms'] },
+    'marketing': { frequency: 'weekly', channels: ['email'] }
+  }
+};
+```
+
+### 5.2 Notification Workflow
+
+```
+Event Trigger → Template Selection → Personalization → Channel Selection → Delivery → Tracking
+      │               │                   │                 │               │          │
+      ▼               ▼                   ▼                 ▼               ▼          ▼
+   Job Status      User Language      Dynamic Content   User Prefs      Gateway     Analytics
+   Changed         Detection          Injection         Check           API Call    Update
+```
+
+### 5.3 Module Interactions
+
+**With Job Lifecycle Module:**
+- Receives job status change events
+- Sends tracking and milestone notifications
+- Handles emergency and delay alerts
+
+**With Payment Module:**
+- Sends payment confirmation messages
+- Notifies about failed transactions
+- Delivers billing and invoice notifications
+
+**With User Module:**
+- Retrieves user communication preferences
+- Gets language and contact information
+- Updates notification engagement metrics
+
+## 6. Analytics Module
+
+**Primary Responsibility:** Data collection, processing, and business intelligence for platform optimization and insights generation.
+
+### 6.1 Sub-components
+
+#### Data Collection Service
+**Responsibilities:**
+- Event tracking and logging
+- User behavior analytics
+- Performance metrics collection
+- Third-party data integration
+
+```javascript
+// Event Tracking Schema
+const eventSchema = {
+  event_id: UUID,
+  event_type: String, // 'user_action', 'system_event', 'business_metric'
+  timestamp: Date,
+  user_id: UUID,
+  session_id: UUID,
+  metadata: {
+    source: String, // 'mobile_app', 'web_portal', 'api'
+    action: String, // 'load_search', 'booking_created', 'payment_completed'
+    properties: Object, // Event-specific data
+    context: {
+      device_info: Object,
+      location: Object,
+      app_version: String
+    }
+  }
+};
+
+// Business Metrics Collection
+const businessMetrics = {
+  daily_active_users: {
+    drivers: Number,
+    shippers: Number,
+    total: Number
+  },
+  transaction_metrics: {
+    volume: Number,
+    value: Number,
+    success_rate: Number,
+    average_ticket_size: Number
+  },
+  platform_health: {
+    load_match_rate: Number,
+    booking_completion_rate: Number,
+    payment_success_rate: Number,
+    user_satisfaction: Number
+  }
+};
+```
+
+#### Reporting & Dashboards Service
+**Responsibilities:**
+- Real-time dashboard generation
+- Scheduled report generation
+- Custom report builder
+- Data visualization
+
+```javascript
+// Dashboard Configuration
+const dashboardTypes = {
+  executive_dashboard: {
+    metrics: ['revenue', 'active_users', 'growth_rate', 'market_share'],
+    refresh_rate: '15_minutes',
+    audience: ['ceo', 'coo', 'investors']
+  },
+  operations_dashboard: {
+    metrics: ['system_health', 'transaction_success', 'support_tickets'],
+    refresh_rate: '5_minutes',
+    audience: ['ops_team', 'tech_team']
+  },
+  driver_analytics: {
+    metrics: ['earnings', 'trips_completed', 'ratings', 'efficiency'],
+    refresh_rate: '1_hour',
+    audience: ['drivers']
+  }
+};
+```
+
+#### Business Intelligence Service
+**Responsibilities:**
+- Predictive analytics
+- Market trend analysis
+- Route optimization insights
+- Demand forecasting
+
+```javascript
+// ML Model Integration
+class BusinessIntelligenceService {
+  async generateDemandForecast(region, timeframe) {
+    // Collect historical data
+    const historicalData = await this.getHistoricalLoadData(region);
+    const externalFactors = await this.getExternalFactors(); // Weather, festivals, etc.
+    
+    // Apply ML model
+    const forecast = await this.mlModel.predict({
+      historical_loads: historicalData,
+      seasonal_patterns: this.extractSeasonalPatterns(historicalData),
+      external_factors: externalFactors
+    });
+    
+    return {
+      region,
+      forecast_period: timeframe,
+      predicted_demand: forecast.demand_curve,
+      confidence_interval: forecast.confidence,
+      recommendations: this.generateRecommendations(forecast)
+    };
+  }
+}
+```
+
+### 6.2 Module Interactions
+
+**With All Modules:**
+- Collects performance and usage metrics
+- Provides insights for optimization
+- Monitors system health and alerts
+
+## Inter-Module Communication Patterns
+
+### 1. Event-Driven Architecture
+```javascript
+// Event Bus Implementation
+class EventBus {
+  constructor() {
+    this.subscribers = new Map();
+  }
+  
+  subscribe(eventType, handler) {
+    if (!this.subscribers.has(eventType)) {
+      this.subscribers.set(eventType, []);
+    }
+    this.subscribers.get(eventType).push(handler);
+  }
+  
+  async publish(eventType, eventData) {
+    const handlers = this.subscribers.get(eventType) || [];
+    const promises = handlers.map(handler => handler(eventData));
+    await Promise.all(promises);
+  }
+}
+
+// Usage Example
+eventBus.subscribe('job.status_changed', async (data) => {
+  await notificationModule.sendStatusUpdate(data);
+  await analyticsModule.trackStatusChange(data);
+  await paymentModule.handlePaymentTrigger(data);
+});
+```
+
+### 2. API Gateway Routing
+```javascript
+// Route Configuration
+const routeConfig = {
+  '/api/users/*': 'user-service',
+  '/api/loads/*': 'load-service',
+  '/api/jobs/*': 'job-lifecycle-service',
+  '/api/payments/*': 'payment-service',
+  '/api/notifications/*': 'notification-service',
+  '/api/analytics/*': 'analytics-service'
+};
+```
+
+### 3. Database Integration Patterns
+```javascript
+// Shared Database Entities
+const sharedEntities = {
+  users: 'user_module.users',
+  loads: 'load_module.loads',
+  jobs: 'job_module.jobs',
+  payments: 'payment_module.transactions',
+  notifications: 'notification_module.messages',
+  events: 'analytics_module.events'
+};
+
+// Cross-module data access
+class CrossModuleDataAccess {
+  async getUserProfile(userId, requestingModule) {
+    // Validate access permissions
+    const permissions = this.getModulePermissions(requestingModule);
+    if (!permissions.includes('read_user_profile')) {
+      throw new Error('Unauthorized access');
+    }
+    
+    // Return filtered data based on permissions
+    return await this.userModule.getProfile(userId, permissions);
+  }
+}
+```
+
+This modular architecture ensures clear separation of concerns, enables independent scaling of different components, and provides flexibility for future enhancements while maintaining system integrity and performance.
